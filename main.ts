@@ -39,7 +39,7 @@ interface IEmailSubscription {
 }
 
 const app = new Hono();
-const kv = await Deno.openKv("./db");
+const kv = await Deno.openKv();
 const emailService = new EmailService();
 
 app.use(
