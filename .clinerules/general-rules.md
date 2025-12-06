@@ -1,0 +1,1 @@
+- Do not execute code to test or run the proyect, the user will test it manually.

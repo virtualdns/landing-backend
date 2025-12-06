@@ -1,0 +1,4 @@
+- Read the `deno.json` file to understand what technology the project is using.
+- Read the `README.md` file to understand the project.
+- If you need to check how to use `Hono`, then read: https://hono.dev/llms.txt
+- If you need to check how to use `Deno.kv`, then read: https://docs.deno.com/examples/kv/

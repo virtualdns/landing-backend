@@ -1,0 +1,3 @@
+- Write the tests into the `tests` folder.
+- Code must be stored in `/src`.
+- Main code to work in `main.ts`
