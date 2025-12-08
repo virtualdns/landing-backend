@@ -50,7 +50,7 @@ app.use(
   })
 );
 
-app.use("*", cors({ origin: 'virtualdns.io' }));
+app.use("*", cors({ origin: () => Deno.env.get("CORS_ORIGIN") || "*" }));
 
 // POST endpoint to receive and store email
 app.post("/subscribe",
@@ -112,7 +112,7 @@ app.post("/subscribe",
         email: email,
         cta: cta as EmailCategory,
         language: lang,
-        emailStatus: EmailStatus.Sent,
+        emailStatus: EmailStatus.Pending,
         createdAt: now,
         subscribedAt: now,
         retryCount: 0,
@@ -150,7 +150,7 @@ app.get("/identify", async (c) => {
     Logger.log(`  → Generated random ID: ${randomId}`);
 
     const hashedKey = await HashService.hash(randomId, identifySalt);
-    Logger.log(`  → Generated hash key`);
+    Logger.log(`  → Generated hash key: ${hashedKey}`);
 
     return c.json({
       key: hashedKey,
