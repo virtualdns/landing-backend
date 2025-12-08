@@ -10,13 +10,13 @@ import { Logger } from "./src/logger.ts";
 import { HashService } from "./src/hash.service.ts";
 
 const bodySchema = z.object({
-  email: z.email().max(50),
+  email: z.email().max(50).trim(),
   cta: z.enum(['interested', 'tester', 'adopter']),
   refer: z.enum(['x', 'whatsapp', 'reddit']).optional(),
 });
 
 const headerSchema = z.object({
-  "x-i": z.string().min(15).max(150).includes(":"),
+  "x-i": z.string().min(15).max(150).includes(":").trim(),
 });
 
 export enum EmailStatus {
