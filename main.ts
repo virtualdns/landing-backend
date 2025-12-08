@@ -7,6 +7,7 @@ import { languageDetector } from 'hono/language';
 import { rateLimiter } from "hono-rate-limiter";
 import { EmailService, type EmailCategory } from "./src/email.service.ts";
 import { Logger } from "./src/logger.ts";
+import { HashService } from "./src/hash.service.ts";
 
 const bodySchema = z.object({
   email: z.email().max(50),
@@ -16,6 +17,7 @@ const bodySchema = z.object({
 
 const headerSchema = z.object({
   "x-i": z.uuid(),
+  "authorization": z.string(),
 });
 
 export enum EmailStatus {
@@ -76,6 +78,29 @@ app.post("/subscribe", zValidator('json', bodySchema), async (c) => {
     Logger.log(`  → Refer: ${refer || 'none'}`);
     Logger.log(`  → Language: ${lang}`);
 
+    const authHeader = c.req.header("authorization");
+    const identifySalt = Deno.env.get("IDENTIFY_SALT");
+
+    if (!identifySalt) {
+      Logger.error("IDENTIFY_SALT environment variable is not set");
+      return c.json({}, STATUS_CODE.InternalServerError);
+    }
+
+    if (!authHeader) {
+      Logger.log("Authorization header missing - Returning 401 Unauthorized");
+      return c.json({}, STATUS_CODE.Unauthorized);
+    }
+
+    Logger.log("Validating authorization token...");
+    const isValidToken = await HashService.validateAuthToken(authHeader, identifySalt);
+
+    if (!isValidToken) {
+      Logger.log("Invalid authorization token - Returning 401 Unauthorized");
+      return c.json({}, STATUS_CODE.Unauthorized);
+    }
+
+    Logger.log("Authorization token validated successfully");
+
     Logger.log("Checking if email already exists in database...");
     const storedEmail = await kv.get(["emails", email]);
 
@@ -91,7 +116,7 @@ app.post("/subscribe", zValidator('json', bodySchema), async (c) => {
       email: email,
       cta: cta as EmailCategory,
       language: lang,
-      emailStatus: EmailStatus.Pending,
+      emailStatus: EmailStatus.Sent,
       createdAt: now,
       subscribedAt: now,
       retryCount: 0,
@@ -108,6 +133,35 @@ app.post("/subscribe", zValidator('json', bodySchema), async (c) => {
     return c.json({}, STATUS_CODE.Created);
   } catch (error) {
     Logger.error("Error processing subscription:", error);
+
+    return c.json({}, STATUS_CODE.InternalServerError);
+  }
+});
+
+// GET endpoint to generate an identifier
+app.get("/identify", async (c) => {
+  try {
+    Logger.log("Identify endpoint called");
+
+    const identifySalt = Deno.env.get("IDENTIFY_SALT");
+
+    if (!identifySalt) {
+      Logger.error("IDENTIFY_SALT environment variable is not set");
+      return c.json({}, STATUS_CODE.InternalServerError);
+    }
+
+    const randomId = HashService.generateRandomString(15);
+    Logger.log(`  → Generated random ID: ${randomId}`);
+
+    const hashedKey = await HashService.hash(randomId, identifySalt);
+    Logger.log(`  → Generated hash key`);
+
+    return c.json({
+      key: hashedKey,
+      id: randomId,
+    }, STATUS_CODE.OK);
+  } catch (error) {
+    Logger.error("Error processing identify request:", error);
 
     return c.json({}, STATUS_CODE.InternalServerError);
   }
