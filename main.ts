@@ -16,7 +16,7 @@ const bodySchema = z.object({
 });
 
 const headerSchema = z.object({
-  "x-i": z.uuid(),
+  "x-i": z.string().min(15).max(150),
 });
 
 export enum EmailStatus {
