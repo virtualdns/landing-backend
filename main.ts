@@ -17,7 +17,6 @@ const bodySchema = z.object({
 
 const headerSchema = z.object({
   "x-i": z.uuid(),
-  "authorization": z.string(),
 });
 
 export enum EmailStatus {
@@ -78,7 +77,7 @@ app.post("/subscribe", zValidator('json', bodySchema), async (c) => {
     Logger.log(`  → Refer: ${refer || 'none'}`);
     Logger.log(`  → Language: ${lang}`);
 
-    const authHeader = c.req.header("authorization");
+    const idHeader = c.req.header("x-i");
     const identifySalt = Deno.env.get("IDENTIFY_SALT");
 
     if (!identifySalt) {
@@ -86,20 +85,20 @@ app.post("/subscribe", zValidator('json', bodySchema), async (c) => {
       return c.json({}, STATUS_CODE.InternalServerError);
     }
 
-    if (!authHeader) {
-      Logger.log("Authorization header missing - Returning 401 Unauthorized");
+    if (!idHeader) {
+      Logger.log("Id header missing - Returning 401 Unauthorized");
       return c.json({}, STATUS_CODE.Unauthorized);
     }
 
-    Logger.log("Validating authorization token...");
-    const isValidToken = await HashService.validateAuthToken(authHeader, identifySalt);
+    Logger.log("Validating id token...");
+    const isValidToken = await HashService.validateAuthToken(idHeader, identifySalt);
 
     if (!isValidToken) {
-      Logger.log("Invalid authorization token - Returning 401 Unauthorized");
+      Logger.log("Invalid id token - Returning 401 Unauthorized");
       return c.json({}, STATUS_CODE.Unauthorized);
     }
 
-    Logger.log("Authorization token validated successfully");
+    Logger.log("id token validated successfully");
 
     Logger.log("Checking if email already exists in database...");
     const storedEmail = await kv.get(["emails", email]);
