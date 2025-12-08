@@ -50,92 +50,89 @@ app.use(
   })
 );
 
-// Apply the rate limiting middleware to all requests.
-app.use(
+app.use("*", cors({ origin: 'virtualdns.io' }));
+
+// POST endpoint to receive and store email
+app.post("/subscribe",
   zValidator('header', headerSchema),
   rateLimiter({
     windowMs: 1 * 60 * 1000,
     limit: 3,
     standardHeaders: "draft-6",
     keyGenerator: (c) => c.req.header("x-i")!,
-  })
-);
+  }),
+  zValidator('json', bodySchema), async (c) => {
+    const lang = c.get('language');
 
-app.use("*", cors({ origin: 'virtualdns.io' }));
+    try {
+      const body = c.req.valid('json');
+      const { email, cta, refer } = body;
 
-// POST endpoint to receive and store email
-app.post("/subscribe", zValidator('json', bodySchema), async (c) => {
-  const lang = c.get('language');
+      Logger.log("Subscribe endpoint called");
+      Logger.log(`  → Email: ${email}`);
+      Logger.log(`  → CTA: ${cta}`);
+      Logger.log(`  → Refer: ${refer || 'none'}`);
+      Logger.log(`  → Language: ${lang}`);
 
-  try {
-    const body = c.req.valid('json');
-    const { email, cta, refer } = body;
+      const idHeader = c.req.header("x-i");
+      const identifySalt = Deno.env.get("IDENTIFY_SALT");
 
-    Logger.log("Subscribe endpoint called");
-    Logger.log(`  → Email: ${email}`);
-    Logger.log(`  → CTA: ${cta}`);
-    Logger.log(`  → Refer: ${refer || 'none'}`);
-    Logger.log(`  → Language: ${lang}`);
+      if (!identifySalt) {
+        Logger.error("IDENTIFY_SALT environment variable is not set");
+        return c.json({}, STATUS_CODE.InternalServerError);
+      }
 
-    const idHeader = c.req.header("x-i");
-    const identifySalt = Deno.env.get("IDENTIFY_SALT");
+      if (!idHeader) {
+        Logger.log("Id header missing - Returning 401 Unauthorized");
+        return c.json({}, STATUS_CODE.Unauthorized);
+      }
 
-    if (!identifySalt) {
-      Logger.error("IDENTIFY_SALT environment variable is not set");
+      Logger.log("Validating id token...");
+      const isValidToken = await HashService.validateAuthToken(idHeader, identifySalt);
+
+      if (!isValidToken) {
+        Logger.log("Invalid id token - Returning 401 Unauthorized");
+        return c.json({}, STATUS_CODE.Unauthorized);
+      }
+
+      Logger.log("id token validated successfully");
+
+      Logger.log("Checking if email already exists in database...");
+      const storedEmail = await kv.get(["emails", email]);
+
+      if (storedEmail.value !== null) {
+        Logger.log(`Email already exists: ${email} - Returning 409 Conflict`);
+        return c.json({}, STATUS_CODE.Conflict);
+      }
+
+      Logger.log("Email does not exist, proceeding with subscription...");
+      const now = new Date().toISOString();
+      // Store email in Deno.kv with pending status
+      const subscription: IEmailSubscription = {
+        email: email,
+        cta: cta as EmailCategory,
+        language: lang,
+        emailStatus: EmailStatus.Sent,
+        createdAt: now,
+        subscribedAt: now,
+        retryCount: 0,
+        refer: refer,
+      };
+
+      Logger.log("Storing subscription in database...");
+      await kv.set(["emails", email], subscription);
+
+      // Trigger the email worker by updating a notification key
+      await kv.set(["email_notifications"], { timestamp: now });
+      Logger.log(`✓ Subscription stored successfully for: ${email}`);
+
+      return c.json({}, STATUS_CODE.Created);
+    } catch (error) {
+      Logger.error("Error processing subscription:", error);
+
       return c.json({}, STATUS_CODE.InternalServerError);
     }
-
-    if (!idHeader) {
-      Logger.log("Id header missing - Returning 401 Unauthorized");
-      return c.json({}, STATUS_CODE.Unauthorized);
-    }
-
-    Logger.log("Validating id token...");
-    const isValidToken = await HashService.validateAuthToken(idHeader, identifySalt);
-
-    if (!isValidToken) {
-      Logger.log("Invalid id token - Returning 401 Unauthorized");
-      return c.json({}, STATUS_CODE.Unauthorized);
-    }
-
-    Logger.log("id token validated successfully");
-
-    Logger.log("Checking if email already exists in database...");
-    const storedEmail = await kv.get(["emails", email]);
-
-    if (storedEmail.value !== null) {
-      Logger.log(`Email already exists: ${email} - Returning 409 Conflict`);
-      return c.json({}, STATUS_CODE.Conflict);
-    }
-
-    Logger.log("Email does not exist, proceeding with subscription...");
-    const now = new Date().toISOString();
-    // Store email in Deno.kv with pending status
-    const subscription: IEmailSubscription = {
-      email: email,
-      cta: cta as EmailCategory,
-      language: lang,
-      emailStatus: EmailStatus.Sent,
-      createdAt: now,
-      subscribedAt: now,
-      retryCount: 0,
-      refer: refer,
-    };
-
-    Logger.log("Storing subscription in database...");
-    await kv.set(["emails", email], subscription);
-
-    // Trigger the email worker by updating a notification key
-    await kv.set(["email_notifications"], { timestamp: now });
-    Logger.log(`✓ Subscription stored successfully for: ${email}`);
-
-    return c.json({}, STATUS_CODE.Created);
-  } catch (error) {
-    Logger.error("Error processing subscription:", error);
-
-    return c.json({}, STATUS_CODE.InternalServerError);
-  }
-});
+  });
 
 // GET endpoint to generate an identifier
 app.get("/identify", async (c) => {
